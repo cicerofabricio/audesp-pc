@@ -171,6 +171,14 @@ export class Form {
       }
       pop.hidden = !pop.hidden;
       btn.setAttribute('aria-expanded', String(!pop.hidden));
+      if (!pop.hidden) {
+        // abre para cima quando não há espaço suficiente abaixo do campo
+        pop.classList.remove('acima');
+        const caixa = pop.getBoundingClientRect();
+        if (caixa.bottom > window.innerHeight - 12 && caixa.top > window.innerHeight / 3) {
+          pop.classList.add('acima');
+        }
+      }
     });
     return caixa;
   }
@@ -250,6 +258,12 @@ export class Form {
         deleteIn(this.data, path);
         const campo = input.closest('.campo');
         if (campo) {
+          const dica = campo.querySelector('.dica');
+          if (dica) {
+            dica.textContent = novo.modo === 'cnpj' ? 'somente números · CNPJ com 14 dígitos'
+              : novo.modo === 'rne' ? 'RNE — até 14 caracteres'
+                : 'somente números · CPF com 11 dígitos';
+          }
           campo.classList.add('tocado', 'limpou');
           setTimeout(() => campo.classList.remove('limpou'), 900);
         }

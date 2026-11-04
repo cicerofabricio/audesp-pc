@@ -334,13 +334,15 @@ body[data-rota="ajuda"] .topo-nav a[data-nav="ajuda"] { background: rgba(255, 25
   border-radius: var(--raio);
   box-shadow: var(--sombra);
   margin-bottom: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 .sec-head {
   display: flex; align-items: center; gap: 9px;
   padding: 12px 16px; cursor: pointer; user-select: none;
   background: var(--surface);
+  border-radius: var(--raio) var(--raio) 0 0;
 }
+.secao.colapsada .sec-head { border-radius: var(--raio); }
 .sec-head:hover { background: var(--surface-2); }
 .sec-title { font-weight: 650; font-size: 14.5px; flex: 1; }
 .chev { color: var(--muted); font-size: 12px; transition: transform .15s; width: 12px; }
@@ -375,12 +377,14 @@ body[data-rota="ajuda"] .topo-nav a[data-nav="ajuda"] { background: rgba(255, 25
 .ajuda-pop {
   position: absolute; top: 24px; left: 0; z-index: 60;
   width: min(430px, 84vw);
+  max-height: 62vh; overflow: auto;
   background: var(--surface); color: var(--ink-2);
   border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, .22);
   padding: 12px 14px; font-size: 12.8px; line-height: 1.45;
 }
 .ajuda-pop h4 { font-size: 13.5px; color: var(--ink); margin-bottom: 6px; }
+.ajuda-pop.acima { top: auto; bottom: 26px; }
 .ajuda-pop .ajuda-itens { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
 .ajuda-pop .ajuda-dominio { margin: 3px 0 0; padding-left: 16px; color: var(--muted); }
 .ajuda-pop .mini { display: block; margin-top: 8px; }
@@ -441,13 +445,14 @@ textarea.entrada { resize: vertical; min-height: 68px; }
   border-left: 3px solid color-mix(in srgb, var(--brand) 55%, var(--line));
   border-radius: 10px;
   background: var(--surface);
-  overflow: hidden;
+  overflow: visible;
 }
 .item-head {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line-2);
+  border-radius: 0 9px 0 0;
 }
 .item-num { font-size: 12px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
 .item-titulo { font-size: 12.5px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
