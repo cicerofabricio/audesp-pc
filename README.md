@@ -5,6 +5,8 @@ do terceiro setor no padrão **Audesp / TCE-SP — Fase V, leiaute v1.16**.
 
 Não precisa de servidor, banco de dados, login ou serviço pago. Os dados ficam no navegador do usuário.
 
+> **Publicado em:** <https://cicerofabricio.github.io/audesp-pc/>
+
 ---
 
 ## O que ele faz
