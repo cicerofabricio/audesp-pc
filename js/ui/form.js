@@ -6,8 +6,8 @@
 
 import { el, pathKey, getIn, setIn, deleteIn, clone } from '../util.js';
 import { resolve, nodeType, enumOptions, titleOf, hintsOf, exampleOf } from '../schema.js';
-
-const DIGITS_RE = /^\^\[0-9\]\{(\d+)(?:,(\d+))?\}\$|^\^\[0-9\]\+\$$/;
+import { tipoDeMascara, aplicarMascara, formatarNumero, soDigitos } from '../mascara.js';
+import { conteudoAjuda, resumoAjuda } from '../ajuda-campo.js';
 
 export class Form {
   constructor({ doc, data, onChange }) {
@@ -16,6 +16,16 @@ export class Form {
     this.onChange = onChange || (() => {});
     this.root = el('div', { class: 'form' });
     this.sections = new Map();
+    this._fecharAjudas = (ev) => {
+      for (const pop of this.root.querySelectorAll('.ajuda-pop')) {
+        if (ev && pop.parentElement && pop.parentElement.contains(ev.target)) continue;
+        pop.hidden = true;
+        const btn = pop.parentElement && pop.parentElement.querySelector('.ajuda-btn');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      }
+    };
+    document.addEventListener('click', this._fecharAjudas);
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') this._fecharAjudas(); });
   }
 
   /* --------------------------------------------------------------- montagem */
@@ -117,9 +127,12 @@ export class Form {
     const titulo = titleOf(this.doc, node, key);
     const wrap = el('div', { class: `campo campo-${type}`, dataset: { path: pathKey(path) } });
     if (!semRotulo) {
-      wrap.append(el('label', { class: 'rotulo' },
-        titulo,
-        required ? el('span', { class: 'obrig', title: 'Campo obrigatório' }, ' *') : null,
+      wrap.append(el('div', { class: 'rotulo-linha' },
+        el('label', { class: 'rotulo', title: resumoAjuda(this.doc, node) || null },
+          titulo,
+          required ? el('span', { class: 'obrig', title: 'Campo obrigatório' }, ' *') : null,
+        ),
+        this.botaoAjuda(node, key, titulo, required),
       ));
     }
     const ctrl = this.control(node, value, path);
@@ -133,13 +146,95 @@ export class Form {
     return wrap;
   }
 
+  /** Botão “?” com a explicação detalhada do campo. */
+  botaoAjuda(node, chave, titulo, obrigatorio) {
+    const btn = el('button', {
+      class: 'ajuda-btn', type: 'button', 'aria-label': `Ajuda do campo ${titulo}`,
+      'aria-expanded': 'false', title: 'O que preencher aqui?',
+    }, '?');
+    const pop = el('div', { class: 'ajuda-pop', role: 'tooltip', hidden: true });
+    const caixa = el('span', { class: 'ajuda-caixa' }, btn, pop);
+
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      this._fecharAjudas(ev);
+      if (!pop.dataset.pronto) {
+        pop.append(...conteudoAjuda(this.doc, node, chave, obrigatorio));
+        pop.dataset.pronto = '1';
+      }
+      pop.hidden = !pop.hidden;
+      btn.setAttribute('aria-expanded', String(!pop.hidden));
+    });
+    return caixa;
+  }
+
   control(node, value, path) {
+    const mascara = tipoDeMascara(node);
+    if (mascara) return this.maskedInput(node, value, path, mascara);
     if (Array.isArray(node.enum) && node.enum.length) return this.selectControl(node, value, path);
     const type = nodeType(this.doc, node);
     if (type === 'boolean') return this.selectBoolean(value, path);
+    if (type === 'number' && node.multipleOf === 0.01) return this.moneyInput(node, value, path);
     if (type === 'integer' || type === 'number') return this.numberInput(node, value, path, type);
     if (node.format === 'date') return this.dateInput(value, path);
     return this.textInput(node, value, path);
+  }
+
+  /** CPF, CNPJ e códigos numéricos com máscara e cursor estável. */
+  maskedInput(node, value, path, mascara) {
+    const input = el('input', {
+      class: 'entrada entrada-mascara',
+      type: 'text',
+      inputmode: 'numeric',
+      autocomplete: 'off',
+      spellcheck: false,
+      maxLength: mascara.tipo === 'cpf' ? 14 : mascara.tipo === 'cnpj' ? 18 : mascara.max,
+      placeholder: mascara.exemplo,
+    });
+    input.value = mascara.formato(soDigitos(value));
+    input.addEventListener('input', () => {
+      const digitos = aplicarMascara(input, mascara);
+      this.write(path, digitos || undefined);
+    });
+    input.addEventListener('focus', () => {
+      const pos = input.value.length;
+      input.setSelectionRange(pos, pos);
+    });
+    return input;
+  }
+
+  /** Valores monetários: aceita vírgula, bloqueia letras e fecha em 2 casas. */
+  moneyInput(node, value, path) {
+    const input = el('input', {
+      class: 'entrada entrada-moeda',
+      type: 'text',
+      inputmode: 'decimal',
+      autocomplete: 'off',
+      placeholder: '0,00',
+    });
+    const mostrar = () => {
+      const v = getIn(this.data, path);
+      input.value = typeof v === 'number' ? formatarNumero(v) : '';
+    };
+    mostrar();
+    input.addEventListener('focus', () => {
+      const v = getIn(this.data, path);
+      if (typeof v === 'number') input.value = String(v).replace('.', ',');
+      input.select();
+    });
+    input.addEventListener('input', () => {
+      const limpo = input.value.replace(/[^\d,.-]/g, '').replace(/\./g, ',');
+      if (limpo !== input.value) input.value = limpo;
+      if (limpo.trim() === '' || limpo === ',') return this.write(path, undefined);
+      const n = Number(limpo.replace(',', '.'));
+      if (Number.isNaN(n)) return;
+      this.write(path, Math.round(n * 100) / 100);
+    });
+    input.addEventListener('blur', () => {
+      const v = getIn(this.data, path);
+      input.value = typeof v === 'number' ? formatarNumero(v) : '';
+    });
+    return input;
   }
 
   /** Grava o valor no caminho e avisa a tela. */
@@ -215,7 +310,6 @@ export class Form {
   textInput(node, value, path) {
     const maxLength = typeof node.maxLength === 'number' ? node.maxLength : null;
     const long = maxLength !== null && maxLength > 200;
-    const digitsOnly = DIGITS_RE.test(node.pattern || '');
     const placeholder = exampleOf(this.doc, node);
     const input = long
       ? el('textarea', { class: 'entrada', rows: 3, maxLength, placeholder: placeholder === null ? null : String(placeholder) })
@@ -224,19 +318,10 @@ export class Form {
         type: node.format === 'uri' ? 'url' : 'text',
         maxLength,
         placeholder: placeholder === null ? null : String(placeholder),
-        inputmode: digitsOnly ? 'numeric' : null,
         autocomplete: 'off',
       });
     if (value !== undefined && value !== null) input.value = String(value);
-    if (digitsOnly) {
-      input.addEventListener('input', () => {
-        const cleaned = input.value.replace(/\D+/g, '');
-        if (cleaned !== input.value) input.value = cleaned;
-        this.write(path, cleaned);
-      });
-    } else {
-      input.addEventListener('input', () => this.write(path, input.value));
-    }
+    input.addEventListener('input', () => this.write(path, input.value));
     input.addEventListener('blur', () => {
       const v = input.value.trim();
       if (v !== input.value) {
@@ -328,21 +413,21 @@ export class Form {
   }
 
   duplicateItem(path, node) {
-    const list = getIn(this.data, path);
+    const arrPath = path.slice(0, -1);
+    const list = getIn(this.data, arrPath);
     if (!Array.isArray(list)) return;
     const i = path[path.length - 1];
-    const copy = clone(list[i]);
-    list.splice(i + 1, 0, copy);
-    this.repaintArray(path);
+    list.splice(i + 1, 0, clone(list[i]));
+    this.repaintArray(arrPath);
     this.onChange();
   }
 
   removeItem(path, node) {
-    const list = getIn(this.data, path);
+    const arrPath = path.slice(0, -1);
+    const list = getIn(this.data, arrPath);
     if (!Array.isArray(list)) return;
-    const i = path[path.length - 1];
-    list.splice(i, 1);
-    this.repaintArray(path);
+    list.splice(path[path.length - 1], 1);
+    this.repaintArray(arrPath);
     this.onChange();
   }
 

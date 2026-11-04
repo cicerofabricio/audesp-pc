@@ -2,13 +2,16 @@
  * editor.js — tela de edição de uma prestação de contas.
  */
 
-import { getRecord, saveRecord, deleteRecord } from '../store.js';
+import { getRecord, saveRecord, deleteRecord, salvarSnapshot, listarHistorico } from '../store.js';
 import { TIPOS, resolve, titleOf } from '../schema.js';
 import { validate, stats, errorIndex } from '../validator.js';
 import { Form } from '../ui/form.js';
 import { el, debounce, clone, uid, fmtDateTimeBR } from '../util.js';
 import { toast, confirmDialog, openModal } from '../ui/shell.js';
 import { baixarRegistro, serializar, nomeArquivo } from '../exportar.js';
+import {
+  suportaArquivoLocal, vincularArquivo, desvincularArquivo, arquivoVinculado, nomeDoArquivoVinculado, salvarNoArquivo,
+} from '../persistencia.js';
 import { renderConferencia } from './conferencia.js';
 
 export async function renderEditor(root, ctx, id, abaInicial) {
@@ -121,9 +124,32 @@ export async function renderEditor(root, ctx, id, abaInicial) {
 
   const recalcular = debounce(aplicar, 220);
 
+  let ultimoSnapshot = Date.now();
+  let arquivoNome = null;
+  let avisouArquivo = false;
+
   const salvar = debounce(async () => {
     const salvo = await saveRecord(rec);
     rec.atualizado = salvo.atualizado;
+
+    // versão de segurança a cada 2 minutos de edição
+    if (Date.now() - ultimoSnapshot > 120000) {
+      ultimoSnapshot = Date.now();
+      salvarSnapshot(rec.id, rec.dados).catch(() => {});
+    }
+
+    // espelho em arquivo local, quando vinculado
+    if (arquivoNome) {
+      try {
+        await salvarNoArquivo(rec);
+      } catch (err) {
+        if (!avisouArquivo) {
+          avisouArquivo = true;
+          toast(`Não gravou em ${arquivoNome}: ${err.message}`, 'erro', 7000);
+        }
+      }
+    }
+
     statusSalvo.classList.remove('salvando');
     textoSalvo.textContent = `salvo às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   }, 900);
@@ -133,6 +159,17 @@ export async function renderEditor(root, ctx, id, abaInicial) {
     textoSalvo.textContent = 'salvando…';
     recalcular();
     salvar();
+  }
+
+  async function atualizarIndicadorArquivo() {
+    const handle = await arquivoVinculado();
+    arquivoNome = handle ? nomeDoArquivoVinculado(handle) : null;
+    if (arquivoNome) {
+      statusSalvo.title = `Gravando também em ${arquivoNome}`;
+      textoSalvo.textContent = `salvo · ${arquivoNome}`;
+    } else {
+      statusSalvo.title = 'Salvo neste navegador';
+    }
   }
 
   let abaAtual = 'form';
@@ -273,15 +310,96 @@ export async function renderEditor(root, ctx, id, abaInicial) {
   }
 
   async function menuMais() {
+    const handle = await arquivoVinculado();
+    const vinculo = handle ? nomeDoArquivoVinculado(handle) : null;
+
+    const botoes = [
+      el('button', { class: 'btn', type: 'button', onclick: async () => { await abrirHistorico(); } }, '🕘 Histórico de versões'),
+    ];
+
+    if (suportaArquivoLocal()) {
+      botoes.push(el('button', {
+        class: 'btn', type: 'button',
+        onclick: async () => {
+          try {
+            const h = await vincularArquivo(rec);
+            toast(`Agora o documento é gravado em ${h.name}.`, 'ok', 6000);
+            await atualizarIndicadorArquivo();
+          } catch (err) {
+            if (err.name !== 'AbortError') toast(err.message, 'erro', 6000);
+          }
+        },
+      }, vinculo ? '🔗 Trocar arquivo vinculado…' : '💾 Salvar também em arquivo…'));
+    }
+
+    if (vinculo) {
+      botoes.push(el('button', {
+        class: 'btn btn-ghost', type: 'button',
+        onclick: async () => {
+          await desvincularArquivo();
+          arquivoNome = null;
+          await atualizarIndicadorArquivo();
+          textoSalvo.textContent = 'salvo';
+          toast('Arquivo desvinculado — o documento continua salvo neste navegador.');
+        },
+      }, `Desvincular ${vinculo}`));
+    }
+
+    botoes.push(el('button', { class: 'btn', type: 'button', onclick: async () => { await duplicar(); } }, '⧉ Duplicar prestação'));
+    botoes.push(el('button', { class: 'btn btn-perigo', type: 'button', onclick: async () => { await excluir(); } }, 'Excluir prestação'));
+
     const conteudo = el('div', {},
       el('p', { class: 'dica' }, `Arquivo gerado: ${nomeArquivo(rec)}`),
       el('p', { class: 'dica' }, `Criado em ${fmtDateTimeBR(rec.criado)} · atualizado em ${fmtDateTimeBR(rec.atualizado)}`),
-      el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:12px' },
-        el('button', { class: 'btn', type: 'button', onclick: async () => { await duplicar(); } }, '⧉ Duplicar prestação'),
-        el('button', { class: 'btn btn-perigo', type: 'button', onclick: async () => { await excluir(); } }, 'Excluir prestação'),
-      ),
+      suportaArquivoLocal()
+        ? el('p', { class: 'mini' }, 'O arquivo vinculado é sobrescrito a cada alteração — escolha, por exemplo, uma pasta do Google Drive para ter cópia na nuvem.')
+        : el('p', { class: 'mini' }, 'Este navegador não permite gravar direto em arquivo; use “Baixar JSON” para guardar.'),
+      el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:12px' }, botoes),
     );
     await openModal({ title: 'Mais ações', content: conteudo });
+  }
+
+  /* ------------------------------------------------------------- histórico */
+
+  async function abrirHistorico() {
+    const versoes = await listarHistorico(rec.id);
+    const corpo = el('div', {});
+
+    if (!versoes.length) {
+      corpo.append(el('p', { class: 'dica' },
+        'Nenhuma versão guardada ainda. O sistema cria pontos de restauração automaticamente a cada 2 minutos de edição.'));
+    } else {
+      corpo.append(el('p', { class: 'dica' }, `${versoes.length} versão(ões) guardada(s). Restaurar substitui o conteúdo atual.`));
+      const lista = el('div', { class: 'lista-versoes' });
+      for (const v of versoes.slice(0, 12)) {
+        const quando = new Date(v.quando);
+        lista.append(el('div', { class: 'versao' },
+          el('div', {},
+            el('strong', {}, quando.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })),
+            el('div', { class: 'mini' }, `${Object.keys(v.dados || {}).length} seção(ões) com dados`),
+          ),
+          el('button', {
+            class: 'btn btn-mini', type: 'button',
+            onclick: async () => {
+              const ok = await confirmDialog({
+                title: 'Restaurar versão',
+                message: `Voltar o documento para ${quando.toLocaleString('pt-BR')}? O conteúdo atual será substituído (uma versão dele também está no histórico).`,
+                confirmLabel: 'Restaurar',
+              });
+              if (!ok) return;
+              await salvarSnapshot(rec.id, rec.dados);
+              rec.dados = clone(v.dados);
+              await saveRecord(rec);
+              toast('Versão restaurada.', 'ok');
+              ctx.navigate(`#/edit/${rec.id}`);
+            },
+          }, 'Restaurar'),
+        ));
+      }
+      corpo.append(lista);
+    }
+
+    await openModal({ title: 'Histórico de versões', content: corpo, wide: true });
   }
 
   async function duplicar() {
@@ -307,5 +425,6 @@ export async function renderEditor(root, ctx, id, abaInicial) {
 
   /* inicial */
   aplicar();
+  atualizarIndicadorArquivo();
   if (abaInicial && ['conf', 'json'].includes(abaInicial)) mostrarAba(abaInicial);
 }

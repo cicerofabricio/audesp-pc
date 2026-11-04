@@ -71,9 +71,7 @@ h1, h2, h3, h4 { font-weight: 650; letter-spacing: -.01em; margin: 0; }
 /* ------------------------------------------------------------------ topo */
 
 .topo {
-  position: sticky;
-  top: 0;
-  z-index: 40;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -273,10 +271,8 @@ body[data-rota="ajuda"] .topo-nav a[data-nav="ajuda"] { background: rgba(255, 25
 .editor { max-width: 1320px; margin: 0 auto; padding: 0 18px 80px; }
 
 .editor-topo {
-  position: sticky; top: 54px; z-index: 30;
   display: flex; align-items: flex-start; gap: 14px;
-  padding: 12px 0;
-  background: linear-gradient(var(--bg) 78%, transparent);
+  padding: 12px 0 6px;
   flex-wrap: wrap;
 }
 .editor-topo > .btn-ghost:first-child { margin-top: 3px; }
@@ -290,8 +286,8 @@ body[data-rota="ajuda"] .topo-nav a[data-nav="ajuda"] { background: rgba(255, 25
 .editor-corpo { display: grid; grid-template-columns: 258px minmax(0, 1fr); gap: 22px; align-items: start; }
 
 .nav-secoes {
-  position: sticky; top: 128px;
-  max-height: calc(100vh - 150px);
+  position: sticky; top: 12px;
+  max-height: calc(100vh - 32px);
   overflow: auto;
   padding-right: 6px;
 }
@@ -363,7 +359,42 @@ body[data-rota="ajuda"] .topo-nav a[data-nav="ajuda"] { background: rgba(255, 25
 
 .campo { display: flex; flex-direction: column; gap: 4px; padding: 9px 0 2px; max-width: 760px; }
 .campo-datas { max-width: 420px; }
+.rotulo-linha { display: flex; align-items: center; gap: 6px; }
 .rotulo { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+
+/* ajuda por campo */
+.ajuda-caixa { position: relative; display: inline-flex; align-items: center; }
+.ajuda-btn {
+  width: 18px; height: 18px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--muted);
+  font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.ajuda-btn:hover, .ajuda-btn[aria-expanded="true"] { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+.ajuda-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.ajuda-pop {
+  position: absolute; top: 24px; left: 0; z-index: 60;
+  width: min(430px, 84vw);
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .22);
+  padding: 12px 14px; font-size: 12.8px; line-height: 1.45;
+}
+.ajuda-pop h4 { font-size: 13.5px; color: var(--ink); margin-bottom: 6px; }
+.ajuda-pop .ajuda-itens { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.ajuda-pop .ajuda-dominio { margin: 3px 0 0; padding-left: 16px; color: var(--muted); }
+.ajuda-pop .mini { display: block; margin-top: 8px; }
+
+.entrada-mascara { font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.entrada-moeda { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* histórico */
+.lista-versoes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.versao {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px;
+  background: var(--surface-2); font-size: 13px;
+}
 .obrig { color: var(--danger); font-weight: 700; }
 .entrada {
   font: inherit; font-size: 14px;

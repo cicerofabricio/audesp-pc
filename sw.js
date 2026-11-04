@@ -1,6 +1,6 @@
 /* Service worker — permite usar o sistema offline depois da primeira visita. */
 
-const VERSAO = 'audesp-pc-v1.16.1';
+const VERSAO = 'audesp-pc-v1.17.0';
 const ESSENCIAIS = [
   './',
   './index.html',
@@ -13,6 +13,9 @@ const ESSENCIAIS = [
   './js/validator.js',
   './js/store.js',
   './js/exportar.js',
+  './js/mascara.js',
+  './js/ajuda-campo.js',
+  './js/persistencia.js',
   './js/ui/form.js',
   './js/ui/shell.js',
   './js/views/home.js',

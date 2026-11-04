@@ -1,11 +1,13 @@
 /**
- * store.js — persistência local (IndexedDB, com fallback para localStorage).
- * Nenhum dado sai do navegador do usuário.
+ * store.js — persistência local: registros, histórico de versões e configuração.
+ * IndexedDB com queda para localStorage; nada sai do navegador.
  */
 
 const DB_NAME = 'audesp-pc';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'registros';
+const HIST = 'historico';
+const CONFIG = 'config';
 const LS_KEY = 'audesp-pc:registros';
 const PREF_KEY = 'audesp-pc:preferencias';
 
@@ -19,6 +21,11 @@ function openDb() {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(HIST)) {
+        const h = db.createObjectStore(HIST, { keyPath: 'id' });
+        h.createIndex('registroId', 'registroId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(CONFIG)) db.createObjectStore(CONFIG, { keyPath: 'chave' });
     };
     req.onsuccess = () => res(req.result);
     req.onerror = () => rej(req.error || new Error('falha ao abrir banco'));
@@ -44,22 +51,28 @@ function lsSave(records) {
   localStorage.setItem(LS_KEY, JSON.stringify(records));
 }
 
-function tx(mode) {
-  return db().then((d) => d.transaction(STORE, mode).objectStore(STORE));
+async function store(nome, modo) {
+  const d = await db();
+  return d.transaction(nome, modo).objectStore(nome);
+}
+
+function pedido(request) {
+  return new Promise((res, rej) => {
+    request.onsuccess = () => res(request.result);
+    request.onerror = () => rej(request.error);
+  });
 }
 
 export function storageMode() {
   return fallback ? 'localStorage' : (('indexedDB' in window) ? 'IndexedDB' : 'memória');
 }
 
+/* ------------------------------------------------------------------ registros */
+
 export async function listRecords() {
   try {
-    const store = await tx('readonly');
-    return await new Promise((res, rej) => {
-      const req = store.getAll();
-      req.onsuccess = () => res(req.result || []);
-      req.onerror = () => rej(req.error);
-    });
+    const s = await store(STORE, 'readonly');
+    return (await pedido(s.getAll())) || [];
   } catch {
     return lsAll();
   }
@@ -67,12 +80,8 @@ export async function listRecords() {
 
 export async function getRecord(id) {
   try {
-    const store = await tx('readonly');
-    return await new Promise((res, rej) => {
-      const req = store.get(id);
-      req.onsuccess = () => res(req.result || null);
-      req.onerror = () => rej(req.error);
-    });
+    const s = await store(STORE, 'readonly');
+    return (await pedido(s.get(id))) || null;
   } catch {
     return lsAll().find((r) => r.id === id) || null;
   }
@@ -81,12 +90,8 @@ export async function getRecord(id) {
 export async function saveRecord(record) {
   const rec = { ...record, atualizado: new Date().toISOString() };
   try {
-    const store = await tx('readwrite');
-    await new Promise((res, rej) => {
-      const req = store.put(rec);
-      req.onsuccess = () => res();
-      req.onerror = () => rej(req.error);
-    });
+    const s = await store(STORE, 'readwrite');
+    await pedido(s.put(rec));
   } catch {
     const all = lsAll().filter((r) => r.id !== rec.id);
     all.push(rec);
@@ -97,15 +102,12 @@ export async function saveRecord(record) {
 
 export async function deleteRecord(id) {
   try {
-    const store = await tx('readwrite');
-    await new Promise((res, rej) => {
-      const req = store.delete(id);
-      req.onsuccess = () => res();
-      req.onerror = () => rej(req.error);
-    });
+    const s = await store(STORE, 'readwrite');
+    await pedido(s.delete(id));
   } catch {
     lsSave(lsAll().filter((r) => r.id !== id));
   }
+  await limparHistorico(id);
 }
 
 export async function importRecords(records) {
@@ -118,6 +120,77 @@ export async function importRecords(records) {
   }
   return n;
 }
+
+/* ------------------------------------------------------------------ histórico */
+
+const MAX_SNAPSHOTS = 30;
+
+/** Guarda uma versão do documento. Retorna true se gravou. */
+export async function salvarSnapshot(registroId, dados) {
+  try {
+    const s = await store(HIST, 'readwrite');
+    const id = `${registroId}|${Date.now()}|${Math.random().toString(36).slice(2, 7)}`;
+    await pedido(s.put({ id, registroId, quando: new Date().toISOString(), dados: JSON.parse(JSON.stringify(dados)) }));
+    const antigos = await listarHistorico(registroId);
+    if (antigos.length > MAX_SNAPSHOTS) {
+      const s2 = await store(HIST, 'readwrite');
+      for (const velho of antigos.slice(MAX_SNAPSHOTS)) await pedido(s2.delete(velho.id));
+    }
+    return true;
+  } catch (err) {
+    console.warn('histórico indisponível:', err);
+    return false;
+  }
+}
+
+/** Versões do mais recente para o mais antigo. */
+export async function listarHistorico(registroId) {
+  try {
+    const d = await db();
+    const s = d.transaction(HIST, 'readonly').objectStore(HIST);
+    const itens = (await pedido(s.index('registroId').getAll(registroId))) || [];
+    return itens.sort((a, b) => String(b.quando).localeCompare(String(a.quando)));
+  } catch {
+    return [];
+  }
+}
+
+export async function limparHistorico(registroId) {
+  try {
+    const itens = await listarHistorico(registroId);
+    const s = await store(HIST, 'readwrite');
+    for (const item of itens) await pedido(s.delete(item.id));
+  } catch { /* ignora */ }
+}
+
+/* ------------------------------------------------------------------ configuração */
+
+export async function getConfig(chave) {
+  try {
+    const s = await store(CONFIG, 'readonly');
+    const item = await pedido(s.get(chave));
+    return item ? item.valor : null;
+  } catch {
+    try {
+      const bruto = localStorage.getItem(`audesp-pc:cfg:${chave}`);
+      return bruto ? JSON.parse(bruto) : null;
+    } catch { return null; }
+  }
+}
+
+export async function setConfig(chave, valor) {
+  try {
+    const s = await store(CONFIG, 'readwrite');
+    await pedido(s.put({ chave, valor }));
+  } catch {
+    try {
+      if (valor === null || valor === undefined) localStorage.removeItem(`audesp-pc:cfg:${chave}`);
+      else localStorage.setItem(`audesp-pc:cfg:${chave}`, JSON.stringify(valor));
+    } catch { /* ignora */ }
+  }
+}
+
+/* ------------------------------------------------------------------ preferências */
 
 export function getPrefs() {
   try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch { return {}; }

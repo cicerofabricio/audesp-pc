@@ -5,8 +5,6 @@ do terceiro setor no padrão **Audesp / TCE-SP — Fase V, leiaute v1.16**.
 
 Não precisa de servidor, banco de dados, login ou serviço pago. Os dados ficam no navegador do usuário.
 
-> **Publicado em:** <https://cicerofabricio.github.io/audesp-pc/>
-
 ---
 
 ## O que ele faz
@@ -23,6 +21,9 @@ Não precisa de servidor, banco de dados, login ou serviço pago. Os dados ficam
 - **Importação** — JSON do próprio sistema, JSON bruto do Audesp (tipo identificado pelo `descritor`)
   ou backup completo.
 - **Backup e exportação** — um arquivo por prestação, com nome padronizado, e um backup geral.
+- **Máscaras e ajuda em cada campo** — CPF/CNPJ/valores formatados enquanto se digita, com um “?”
+  explicando obrigatoriedade, tipo, limites, domínio e exemplo do leiaute.
+- **Histórico de versões** (menu ⋯) e **gravação contínua em arquivo** escolhido pelo usuário.
 - **Documentação no próprio site** — aba com os manuais oficiais do TCE-SP em PDF (v1.21 e Fase V 2024),
   visualizador embutido e a contagem de seções/campos obrigatórios de cada leiaute.
 - **Funciona offline** depois da primeira visita (service worker).
@@ -74,9 +75,41 @@ e rode `git init -b main && git add . && git commit -m "Audesp PC"`.
 
 O sistema salva automaticamente a cada alteração — repare no indicador “salvo às hh:mm” no topo.
 
-> **Importante:** o armazenamento é local (IndexedDB do navegador). Use sempre o mesmo navegador e
-> computador, e gere **Backup** com frequência. Limpar dados de navegação apaga os registros
-> (os arquivos JSON já baixados permanecem).
+---
+
+## Onde ficam os dados (e como não perder)
+
+O preenchimento é gravado **sozinho**, a cada alteração, no banco local do navegador (IndexedDB).
+Não existe servidor nem conta: nada sai da máquina, mas o dado também não “viaja” sozinho.
+
+| Recurso | O que garante | Onde |
+|---|---|---|
+| Salvamento automático | cada tecla digitada (com atraso de ~1 s) | IndexedDB do navegador |
+| **Histórico de versões** (menu ⋯) | 30 pontos de restauração por documento, criados a cada 2 min de edição | IndexedDB |
+| **Salvar também em arquivo** (menu ⋯) | espelha o JSON em um arquivo real, sobrescrito a cada alteração | pasta que você escolher (ex.: Google Drive) |
+| **Backup** (tela inicial) | um arquivo com todos os documentos | download |
+| **Baixar JSON** | o arquivo de envio ao Audesp | download |
+
+O item **“Salvar também em arquivo…”** usa a API de acesso ao sistema de arquivos (Chrome/Edge).
+Escolhendo um arquivo dentro da pasta do Google Drive, cada alteração é gravada no disco e o Drive
+sincroniza — é a forma mais simples de ter o preenchimento na nuvem sem banco de dados.
+
+> **Navegadores sem essa API** (Firefox/Safari): use **Baixar JSON** + **Backup** periodicamente.
+> Limpar os dados de navegação apaga o banco local; os arquivos já baixados permanecem.
+
+### Vale a pena usar um banco de dados?
+
+Para este caso, **não é necessário** — e provavelmente é pior:
+
+- **IndexedDB (atual):** grátis, instantâneo, funciona offline. Limite: um navegador por vez.
+- **Arquivo vinculado (novo):** resolve o “perder tudo” e o backup, sem servidor nem login.
+- **Supabase/Firebase (nuvem):** resolve multiusuário em vários computadores, mas exige login,
+  política de privacidade (há CPFs e salários nos dados), controle de acesso e cota — o plano gratuito
+  do Supabase já foi consumido e voltaria a ser um limite.
+- **GitHub como armazenamento:** possível, mas cada gravação vira um commit (ruído) e exige token.
+
+Recomendação: manter local + arquivo vinculado + backup. Migrar para nuvem só se houver
+**várias pessoas preenchendo ao mesmo tempo** ou necessidade de acesso por outro computador.
 
 ---
 
@@ -92,8 +125,11 @@ css/app.css                 estilos (tema claro e escuro, impressão)
 js/app.js                   inicialização e rotas
 js/schema.js                catálogo de documentos, resolução de $ref, domínios
 js/validator.js             validação contra o JSON Schema e progresso
-js/store.js                 persistência (IndexedDB/localStorage)
+js/store.js                 persistência (IndexedDB/localStorage), histórico e configuração
 js/exportar.js              geração do JSON e nome de arquivo
+js/mascara.js               máscaras de CPF, CNPJ, códigos e valores
+js/ajuda-campo.js           texto de ajuda de cada campo, gerado do schema
+js/persistencia.js          gravação em arquivo local (File System Access API)
 js/ui/form.js               motor de formulário dirigido por schema
 js/ui/shell.js              notificações e diálogos
 js/views/home.js            lista, criação, importação, backup
