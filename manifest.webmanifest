@@ -1,0 +1,19 @@
+{
+  "name": "Audesp PC — Prestação de Contas do Terceiro Setor",
+  "short_name": "Audesp PC",
+  "description": "Preencha, valide e gere o JSON de prestação de contas no padrão Audesp/TCE-SP (Fase V, v1.16).",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef2f5",
+  "theme_color": "#0b5d5d",
+  "icons": [
+    {
+      "src": "icone.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

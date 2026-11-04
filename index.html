@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Audesp PC · Prestação de Contas do Terceiro Setor</title>
+<meta name="description" content="Gestor local de prestações de contas do terceiro setor no padrão Audesp/TCE-SP: preencha, valide contra o schema oficial e gere o JSON de envio." />
+<meta name="theme-color" content="#0b5d5d" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b5d5d'/%3E%3Cpath d='M18 44V22h6v16h-6zm11 0V16h6v28h-6zm11 0V28h6v16h-6z' fill='%23f2c14e'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body data-rota="home">
+  <header class="topo">
+    <a class="marca" href="#/">
+      <span class="marca-icone" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M4 19V9m6 10V5m6 14v-7m4 7H2" />
+        </svg>
+      </span>
+      <span class="marca-txt">
+        <strong>Audesp PC</strong>
+        <small>Prestação de contas · terceiro setor</small>
+      </span>
+    </a>
+    <nav class="topo-nav">
+      <a href="#/" data-nav="home">Prestações</a>
+      <a href="#/docs" data-nav="docs">Documentação</a>
+      <a href="#/ajuda" data-nav="ajuda">Como usar</a>
+      <span class="selo-local" title="Os dados ficam apenas neste navegador">🔒 100% local</span>
+    </nav>
+  </header>
+
+  <main id="app" aria-live="polite">
+    <div class="carregando">Carregando esquemas do Audesp…</div>
+  </main>
+
+  <footer class="rodape">
+    <p>
+      Ferramenta independente de apoio. Valida os dados contra os JSON Schemas oficiais do
+      <a href="https://audesp.tce.sp.gov.br" target="_blank" rel="noopener">Audesp / TCE-SP</a> (v1.16).
+      A conferência final e o envio são de responsabilidade do órgão.
+    </p>
+  </footer>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <noscript>
+    <p class="aviso">Este sistema precisa de JavaScript habilitado.</p>
+  </noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

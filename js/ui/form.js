@@ -1,0 +1,419 @@
+/**
+ * form.js — formulário gerado a partir do JSON Schema do Audesp.
+ * Suporta objetos aninhados, listas de objetos, listas dentro de listas,
+ * enums com rótulos oficiais, datas, CPF/CNPJ, valores com 2 casas e Sim/Não.
+ */
+
+import { el, pathKey, getIn, setIn, deleteIn, clone } from '../util.js';
+import { resolve, nodeType, enumOptions, titleOf, hintsOf, exampleOf } from '../schema.js';
+
+const DIGITS_RE = /^\^\[0-9\]\{(\d+)(?:,(\d+))?\}\$|^\^\[0-9\]\+\$$/;
+
+export class Form {
+  constructor({ doc, data, onChange }) {
+    this.doc = doc;
+    this.data = data;
+    this.onChange = onChange || (() => {});
+    this.root = el('div', { class: 'form' });
+    this.sections = new Map();
+  }
+
+  /* --------------------------------------------------------------- montagem */
+
+  render() {
+    this.root.replaceChildren();
+    this.sections.clear();
+    const raw = this.doc.raw;
+    const required = new Set(raw.required || []);
+    for (const grupo of this.doc.grupos) {
+      const g = el('div', { class: 'grupo' }, el('h2', { class: 'grupo-titulo' }, grupo.titulo));
+      for (const key of grupo.chaves) {
+        const node = resolve(this.doc, (raw.properties || {})[key]);
+        if (!node) continue;
+        g.append(this.section(key, node, required.has(key)));
+      }
+      this.root.append(g);
+    }
+    return this.root;
+  }
+
+  section(key, node, required) {
+    const type = nodeType(this.doc, node);
+    const badge = el('span', { class: 'sec-badge' }, '—');
+    const extra = el('span', { class: 'sec-extra' });
+    const head = el('div', {
+      class: 'sec-head',
+      role: 'button',
+      tabIndex: 0,
+      dataset: { sec: key },
+      onclick: () => this.toggleSection(key),
+      onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); this.toggleSection(key); } },
+    },
+      el('span', { class: 'chev' }, '▾'),
+      el('span', { class: 'sec-title' }, titleOf(this.doc, node, key)),
+      required ? el('span', { class: 'req-dot', title: 'Seção obrigatória' }) : null,
+      extra,
+      badge,
+    );
+    const body = el('div', { class: 'sec-body' });
+
+    if (type === 'object') {
+      this.appendObjectFields(body, node, this.data ? this.data[key] : undefined, [key], node);
+    } else if (type === 'array') {
+      body.append(this.buildArray(node, this.data ? this.data[key] : undefined, [key]));
+    } else {
+      body.append(this.field(key, node, this.data ? this.data[key] : undefined, [key], required, true));
+    }
+
+    const sec = el('section', { class: 'secao', dataset: { sec: key } }, head, body);
+    this.sections.set(key, { sec, head, body, badge, extra, node, type });
+    return sec;
+  }
+
+  appendObjectFields(container, parentNode, value, path, sectionNode) {
+    const required = new Set(parentNode.required || []);
+    const props = parentNode.properties || {};
+    for (const [key, childRaw] of Object.entries(props)) {
+      const child = resolve(this.doc, childRaw);
+      if (!child) continue;
+      const childPath = [...path, key];
+      const childType = nodeType(this.doc, child);
+      if (childType === 'object') {
+        container.append(this.subBlock(key, child, value ? value[key] : undefined, childPath, required.has(key)));
+      } else if (childType === 'array') {
+        container.append(this.subBlock(key, child, value ? value[key] : undefined, childPath, required.has(key)));
+      } else {
+        container.append(this.field(key, child, value ? value[key] : undefined, childPath, required.has(key)));
+      }
+    }
+    if (!Object.keys(props).length) container.append(el('div', { class: 'vazio' }, 'Sem campos previstos.'));
+  }
+
+  /** Bloco aninhado (objeto ou lista dentro de objeto). */
+  subBlock(key, node, value, path, required) {
+    const type = nodeType(this.doc, node);
+    const bloco = el('div', { class: 'subbloco', dataset: { path: pathKey(path) } });
+    const legend = el('div', { class: 'subbloco-titulo' },
+      el('span', {}, titleOf(this.doc, node, key)),
+      required ? el('span', { class: 'obrig' }, ' *') : null,
+      type === 'array' ? el('span', { class: 'mini', dataset: { countFor: pathKey(path) } }) : null,
+    );
+    bloco.append(legend);
+    if (type === 'object') {
+      const inner = el('div', { class: 'subbloco-corpo' });
+      this.appendObjectFields(inner, node, value, path, node);
+      bloco.append(inner);
+    } else {
+      bloco.append(this.buildArray(node, value, path));
+    }
+    bloco.append(el('div', { class: 'erro' }));
+    return bloco;
+  }
+
+  /* ------------------------------------------------------------------ campo */
+
+  field(key, node, value, path, required, semRotulo = false) {
+    const type = nodeType(this.doc, node);
+    const titulo = titleOf(this.doc, node, key);
+    const wrap = el('div', { class: `campo campo-${type}`, dataset: { path: pathKey(path) } });
+    if (!semRotulo) {
+      wrap.append(el('label', { class: 'rotulo' },
+        titulo,
+        required ? el('span', { class: 'obrig', title: 'Campo obrigatório' }, ' *') : null,
+      ));
+    }
+    const ctrl = this.control(node, value, path);
+    if (semRotulo) ctrl.setAttribute('aria-label', titulo);
+    ctrl.addEventListener('blur', () => wrap.classList.add('tocado'));
+    ctrl.addEventListener('change', () => wrap.classList.add('tocado'));
+    wrap.append(ctrl);
+    const hints = hintsOf(this.doc, node);
+    if (hints.length) wrap.append(el('div', { class: 'dica' }, hints.join(' · ')));
+    wrap.append(el('div', { class: 'erro' }));
+    return wrap;
+  }
+
+  control(node, value, path) {
+    if (Array.isArray(node.enum) && node.enum.length) return this.selectControl(node, value, path);
+    const type = nodeType(this.doc, node);
+    if (type === 'boolean') return this.selectBoolean(value, path);
+    if (type === 'integer' || type === 'number') return this.numberInput(node, value, path, type);
+    if (node.format === 'date') return this.dateInput(value, path);
+    return this.textInput(node, value, path);
+  }
+
+  /** Grava o valor no caminho e avisa a tela. */
+  write(path, value) {
+    if (value === undefined || value === null || value === '') deleteIn(this.data, path);
+    else setIn(this.data, path, value);
+    this.onChange();
+  }
+
+  selectControl(node, value, path) {
+    const opts = enumOptions(this.doc, node);
+    const sel = el('select', { class: 'entrada' });
+    sel.append(el('option', { value: '' }, '— selecione —'));
+    for (const o of opts) {
+      const opt = el('option', { value: String(o.value) }, o.label);
+      if (String(o.value) === String(value ?? '')) opt.selected = true;
+      sel.append(opt);
+    }
+    sel.addEventListener('change', () => {
+      const raw = sel.value;
+      if (raw === '') return this.write(path, undefined);
+      const num = Number(raw);
+      this.write(path, Number.isNaN(num) || String(num) !== raw ? raw : num);
+    });
+    sel.addEventListener('blur', () => sel.closest('.campo')?.classList.add('tocado'));
+    return sel;
+  }
+
+  selectBoolean(value, path) {
+    const sel = el('select', { class: 'entrada' });
+    sel.append(el('option', { value: '' }, '— selecione —'));
+    const sim = el('option', { value: 'true' }, 'Sim');
+    const nao = el('option', { value: 'false' }, 'Não');
+    if (value === true) sim.selected = true;
+    if (value === false) nao.selected = true;
+    sel.append(sim, nao);
+    sel.addEventListener('change', () => {
+      if (sel.value === '') return this.write(path, undefined);
+      this.write(path, sel.value === 'true');
+    });
+    return sel;
+  }
+
+  numberInput(node, value, path, type) {
+    const step = typeof node.multipleOf === 'number' && node.multipleOf > 0 ? node.multipleOf : (type === 'integer' ? 1 : 0.01);
+    const input = el('input', {
+      class: 'entrada',
+      type: 'number',
+      inputmode: type === 'integer' ? 'numeric' : 'decimal',
+      step: String(step),
+      min: node.minimum !== undefined ? String(node.minimum) : null,
+      max: node.maximum !== undefined ? String(node.maximum) : null,
+      placeholder: exampleOf(this.doc, node) !== null ? String(exampleOf(this.doc, node)).replace('.', ',') : null,
+    });
+    if (typeof value === 'number') input.value = String(value);
+    input.addEventListener('input', () => {
+      const raw = input.value.trim();
+      if (raw === '' || raw === '-') return this.write(path, undefined);
+      const num = Number(raw);
+      if (Number.isNaN(num)) return;
+      this.write(path, type === 'integer' && Number.isInteger(num) ? num : num);
+    });
+    return input;
+  }
+
+  dateInput(value, path) {
+    const input = el('input', { class: 'entrada', type: 'date' });
+    if (typeof value === 'string') input.value = value;
+    input.addEventListener('input', () => this.write(path, input.value || undefined));
+    return input;
+  }
+
+  textInput(node, value, path) {
+    const maxLength = typeof node.maxLength === 'number' ? node.maxLength : null;
+    const long = maxLength !== null && maxLength > 200;
+    const digitsOnly = DIGITS_RE.test(node.pattern || '');
+    const placeholder = exampleOf(this.doc, node);
+    const input = long
+      ? el('textarea', { class: 'entrada', rows: 3, maxLength, placeholder: placeholder === null ? null : String(placeholder) })
+      : el('input', {
+        class: 'entrada',
+        type: node.format === 'uri' ? 'url' : 'text',
+        maxLength,
+        placeholder: placeholder === null ? null : String(placeholder),
+        inputmode: digitsOnly ? 'numeric' : null,
+        autocomplete: 'off',
+      });
+    if (value !== undefined && value !== null) input.value = String(value);
+    if (digitsOnly) {
+      input.addEventListener('input', () => {
+        const cleaned = input.value.replace(/\D+/g, '');
+        if (cleaned !== input.value) input.value = cleaned;
+        this.write(path, cleaned);
+      });
+    } else {
+      input.addEventListener('input', () => this.write(path, input.value));
+    }
+    input.addEventListener('blur', () => {
+      const v = input.value.trim();
+      if (v !== input.value) {
+        input.value = v;
+        this.write(path, v);
+      }
+    });
+    return input;
+  }
+
+  /* ------------------------------------------------------------------ listas */
+
+  buildArray(node, value, path) {
+    const cont = el('div', { class: 'lista', dataset: { arr: pathKey(path) } });
+    const count = el('span', { class: 'mini' });
+    const add = el('button', {
+      class: 'btn btn-mini', type: 'button',
+      onclick: () => this.addItem(path, node),
+    }, '＋ Adicionar');
+    const head = el('div', { class: 'lista-topo' }, count, add);
+    const items = el('div', { class: 'itens' });
+    if (!Array.isArray(value) || !value.length) {
+      items.append(el('div', { class: 'vazio' }, 'Nenhum item. Use “Adicionar” para incluir.'));
+    } else {
+      this.fillItems(items, node, value, path);
+    }
+    cont.append(head, items);
+    this.updateCount(cont, path, value);
+    return cont;
+  }
+
+  fillItems(items, node, arr, path) {
+    items.replaceChildren();
+    if (!arr.length) {
+      items.append(el('div', { class: 'vazio' }, 'Nenhum item. Use “Adicionar” para incluir.'));
+      return;
+    }
+    arr.forEach((item, i) => items.append(this.itemCard(node, item, [...path, i])));
+  }
+
+  itemCard(node, value, path) {
+    const itemNode = resolve(this.doc, node.items);
+    const type = nodeType(this.doc, itemNode);
+    const card = el('div', { class: 'item', dataset: { path: pathKey(path) } });
+    const titulo = titleOf(this.doc, itemNode, '') || '';
+    const head = el('div', { class: 'item-head' },
+      el('span', { class: 'item-num' }, `#${path[path.length - 1] + 1}`),
+      el('span', { class: 'item-titulo' }, titulo && titulo !== 'Items' ? titulo : ''),
+      el('span', { class: 'item-acoes' },
+        el('button', { class: 'btn btn-ghost btn-mini', type: 'button', title: 'Duplicar item', onclick: () => this.duplicateItem(path, node) }, '⧉'),
+        el('button', { class: 'btn btn-ghost btn-mini perigo', type: 'button', title: 'Remover item', onclick: () => this.removeItem(path, node) }, '✕'),
+      ),
+    );
+    const body = el('div', { class: 'item-corpo' });
+    if (type === 'object') {
+      this.appendObjectFields(body, itemNode, value, path, itemNode);
+    } else {
+      body.append(this.field(path[path.length - 1] + '', itemNode, value, path, true));
+    }
+    card.append(head, body);
+    return card;
+  }
+
+  arrayNode(path) {
+    let node = resolve(this.doc, this.doc.raw);
+    for (const step of path) {
+      if (!node) return null;
+      node = resolve(this.doc, typeof step === 'number' ? node.items : (node.properties || {})[step]);
+    }
+    return node;
+  }
+
+  blankItem(node) {
+    const item = resolve(this.doc, node.items) || {};
+    const type = nodeType(this.doc, item);
+    if (type === 'object') return {};
+    if (type === 'boolean') return false;
+    if (type === 'integer' || type === 'number') return 0;
+    return '';
+  }
+
+  addItem(path, node) {
+    const list = getIn(this.data, path);
+    const target = Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) setIn(this.data, path, target);
+    target.push(this.blankItem(node));
+    this.repaintArray(path);
+    this.onChange();
+  }
+
+  duplicateItem(path, node) {
+    const list = getIn(this.data, path);
+    if (!Array.isArray(list)) return;
+    const i = path[path.length - 1];
+    const copy = clone(list[i]);
+    list.splice(i + 1, 0, copy);
+    this.repaintArray(path);
+    this.onChange();
+  }
+
+  removeItem(path, node) {
+    const list = getIn(this.data, path);
+    if (!Array.isArray(list)) return;
+    const i = path[path.length - 1];
+    list.splice(i, 1);
+    this.repaintArray(path);
+    this.onChange();
+  }
+
+  repaintArray(path) {
+    const key = pathKey(path);
+    const cont = this.root.querySelector(`[data-arr="${key}"]`);
+    if (!cont) return;
+    const arr = getIn(this.data, path);
+    const node = this.arrayNode(path);
+    const items = cont.querySelector('.itens');
+    if (!items || !node) return;
+    this.fillItems(items, node, Array.isArray(arr) ? arr : [], path);
+    this.updateCount(cont, path, arr);
+  }
+
+  updateCount(cont, path, arr) {
+    const c = cont.querySelector(':scope > .lista-topo > .mini');
+    const n = Array.isArray(arr) ? arr.length : 0;
+    if (c) c.textContent = n === 1 ? '1 item' : `${n} itens`;
+    const mini = this.root.querySelector(`[data-count-for="${pathKey(path)}"]`);
+    if (mini) mini.textContent = n ? ` ${n}` : '';
+  }
+
+  /* ------------------------------------------------------------- pintura */
+
+  toggleSection(key) {
+    const s = this.sections.get(key);
+    if (!s) return;
+    s.sec.classList.toggle('colapsada');
+  }
+
+  expandAll(open) {
+    for (const s of this.sections.values()) s.sec.classList.toggle('colapsada', !open);
+  }
+
+  /** Atualiza contadores e estado das seções. */
+  refresh(statsResult) {
+    if (!statsResult) return;
+    for (const [key, s] of this.sections) {
+      const st = statsResult.sections[key] || { req: 0, filled: 0 };
+      s.badge.textContent = st.req ? `${st.filled}/${st.req}` : '—';
+      s.badge.classList.toggle('ok', st.req > 0 && st.filled >= st.req);
+      const arr = getIn(this.data, [key]);
+      s.extra.textContent = Array.isArray(arr) ? (arr.length ? `${arr.length} ${arr.length === 1 ? 'item' : 'itens'}` : '') : '';
+    }
+  }
+
+  /** Marca campos com erro e escreve as mensagens. */
+  paint(byPath, force = false) {
+    for (const node of this.root.querySelectorAll('[data-path]')) {
+      let msg = byPath.get(node.dataset.path) || '';
+      if (msg === 'Campo obrigatório' && !force && !node.classList.contains('tocado')) msg = '';
+      node.classList.toggle('invalido', Boolean(msg));
+      const err = node.querySelector(':scope > .erro');
+      if (err) err.textContent = msg;
+    }
+  }
+
+  focusFirstError() {
+    const first = this.root.querySelector('.invalido');
+    if (!first) return false;
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const input = first.querySelector('input, select, textarea');
+    if (input) setTimeout(() => input.focus({ preventScroll: true }), 250);
+    return true;
+  }
+
+  goToSection(key) {
+    const s = this.sections.get(key);
+    if (!s) return;
+    s.sec.classList.remove('colapsada');
+    s.sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
