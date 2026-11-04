@@ -202,7 +202,7 @@ export function hintsOf(doc, node) {
     if (m) hints.push(`${m[1]} dígitos`);
     else if (m2) hints.push(`${m2[1]} a ${m2[2]} dígitos`);
     else if (p === '^[0-9]+$') hints.push('somente números');
-    else if (p === '\\S') hints.push('texto obrigatório (não pode ser só espaços)');
+    else if (p === '\\S') hints.push('obrigatório (não pode ficar em branco)');
     else hints.push('respeite o formato exigido');
   }
   if (n.format === 'date') hints.push('data no formato AAAA-MM-DD');

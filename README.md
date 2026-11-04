@@ -21,8 +21,9 @@ Não precisa de servidor, banco de dados, login ou serviço pago. Os dados ficam
 - **Importação** — JSON do próprio sistema, JSON bruto do Audesp (tipo identificado pelo `descritor`)
   ou backup completo.
 - **Backup e exportação** — um arquivo por prestação, com nome padronizado, e um backup geral.
-- **Máscaras e ajuda em cada campo** — CPF/CNPJ/valores formatados enquanto se digita, com um “?”
-  explicando obrigatoriedade, tipo, limites, domínio e exemplo do leiaute.
+- **Máscaras e ajuda em cada campo** — CPF/CNPJ/valores formatados enquanto se digita (o documento do
+  credor muda de máscara conforme o tipo: CPF, CNPJ ou RNE), com um “?” explicando obrigatoriedade,
+  tipo, limites, domínio e exemplo do leiaute.
 - **Histórico de versões** (menu ⋯) e **gravação contínua em arquivo** escolhido pelo usuário.
 - **Documentação no próprio site** — aba com os manuais oficiais do TCE-SP em PDF (v1.21 e Fase V 2024),
   visualizador embutido e a contagem de seções/campos obrigatórios de cada leiaute.

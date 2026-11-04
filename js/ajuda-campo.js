@@ -14,6 +14,15 @@ const ROTULO_TIPO = {
   array: 'Lista de itens',
 };
 
+/** Explicações específicas de campos que o schema sozinho não deixa claros. */
+const DICAS = {
+  documento_numero: 'Aceita somente números. O tamanho e a formatação seguem o “Tipo do Documento do Credor”: CPF (11 dígitos, 000.000.000-00), CNPJ (14 dígitos, 00.000.000/0000-00) ou RNE (até 14 caracteres). O arquivo enviado ao Audesp leva apenas os dígitos, sem pontos, barra ou traço.',
+  documento_tipo: 'Define a máscara do número ao lado: 1 = CPF, 2 = CNPJ, 3 = RNE (documento de estrangeiro).',
+  descritor: 'Identifica o documento no Audesp. O mês é sempre 12 (prestação anual) e o ano não pode ser anterior a 2024.',
+  codigo_ajuste: 'Número do ajuste no Audesp, com 15 a 19 dígitos, sem pontos ou traços (ex.: 2024000000000001).',
+  tipo_documento: 'Indica qual instrumento está sendo prestado (colaboração, fomento, parceria, convênio ou contrato de gestão).',
+};
+
 function descreverFormato(node) {
   const p = node.pattern || '';
   if (p === '^[0-9]{11}$') return 'CPF com 11 dígitos (o sistema insere os pontos e o traço automaticamente).';
@@ -70,6 +79,9 @@ export function conteudoAjuda(doc, nodeRaw, chave, obrigatorio) {
 
   const exemplo = (node.examples || []).find((e) => typeof e !== 'object' && !/^\d+\s*[=\-–]/.test(String(e)));
   if (exemplo !== undefined) itens.push(el('li', {}, `Exemplo do leiaute: ${exemplo}.`));
+
+  const dica = DICAS[chave];
+  if (dica) itens.push(el('li', {}, dica));
 
   if (tipo === 'array') {
     itens.push(el('li', {}, 'Use “Adicionar” para incluir itens; cada item pode ser duplicado (⧉) ou removido (✕).'));

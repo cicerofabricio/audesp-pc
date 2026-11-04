@@ -6,7 +6,7 @@
 
 import { el, pathKey, getIn, setIn, deleteIn, clone } from '../util.js';
 import { resolve, nodeType, enumOptions, titleOf, hintsOf, exampleOf } from '../schema.js';
-import { tipoDeMascara, aplicarMascara, formatarNumero, soDigitos } from '../mascara.js';
+import { tipoDeMascara, aplicarMascara, formatarNumero, formatarCPF, formatarCNPJ, soDigitos } from '../mascara.js';
 import { conteudoAjuda, resumoAjuda } from '../ajuda-campo.js';
 
 export class Form {
@@ -16,6 +16,7 @@ export class Form {
     this.onChange = onChange || (() => {});
     this.root = el('div', { class: 'form' });
     this.sections = new Map();
+    this._documentos = new Map();
     this._fecharAjudas = (ev) => {
       for (const pop of this.root.querySelectorAll('.ajuda-pop')) {
         if (ev && pop.parentElement && pop.parentElement.contains(ev.target)) continue;
@@ -140,7 +141,13 @@ export class Form {
     ctrl.addEventListener('blur', () => wrap.classList.add('tocado'));
     ctrl.addEventListener('change', () => wrap.classList.add('tocado'));
     wrap.append(ctrl);
-    const hints = hintsOf(this.doc, node);
+    let hints = hintsOf(this.doc, node);
+    if (path[path.length - 1] === 'documento_numero') {
+      const tipo = getIn(this.data, [...path.slice(0, -1), 'documento_tipo']);
+      hints = [tipo === 2 ? 'somente números · CNPJ com 14 dígitos'
+        : tipo === 3 ? 'RNE — até 14 caracteres'
+          : 'somente números · CPF com 11 dígitos'];
+    }
     if (hints.length) wrap.append(el('div', { class: 'dica' }, hints.join(' · ')));
     wrap.append(el('div', { class: 'erro' }));
     return wrap;
@@ -169,6 +176,7 @@ export class Form {
   }
 
   control(node, value, path) {
+    if (path[path.length - 1] === 'documento_numero') return this.documentoInput(node, value, path);
     const mascara = tipoDeMascara(node);
     if (mascara) return this.maskedInput(node, value, path, mascara);
     if (Array.isArray(node.enum) && node.enum.length) return this.selectControl(node, value, path);
@@ -178,6 +186,72 @@ export class Form {
     if (type === 'integer' || type === 'number') return this.numberInput(node, value, path, type);
     if (node.format === 'date') return this.dateInput(value, path);
     return this.textInput(node, value, path);
+  }
+
+  /**
+   * Número do documento do credor: o leiaute aceita CPF (11), CNPJ (14) ou RNE,
+   * conforme o campo “tipo” ao lado. A máscara acompanha o tipo escolhido e o
+   * dado gravado continua sendo só dígitos (ou o texto do RNE).
+   */
+  documentoInput(node, value, path) {
+    const base = path.slice(0, -1);
+    const tipoPath = [...base, 'documento_tipo'];
+
+    const definicao = () => {
+      const tipo = getIn(this.data, tipoPath);
+      if (tipo === 2) return { modo: 'cnpj', max: 14, limite: 18, formato: formatarCNPJ, exemplo: '00.000.000/0000-00' };
+      if (tipo === 3) return { modo: 'rne', max: 14, limite: 14, formato: (v) => v, exemplo: 'RNE — até 14 caracteres' };
+      return { modo: 'cpf', max: 11, limite: 14, formato: formatarCPF, exemplo: '000.000.000-00' };
+    };
+
+    let atual = definicao();
+    const input = el('input', {
+      class: 'entrada entrada-mascara',
+      type: 'text',
+      autocomplete: 'off',
+      spellcheck: false,
+      maxLength: atual.limite,
+      placeholder: atual.exemplo,
+      inputmode: atual.modo === 'rne' ? null : 'numeric',
+    });
+
+    const aplicarValor = () => {
+      const bruto = String(getIn(this.data, path) ?? '');
+      input.value = atual.modo === 'rne' ? bruto.toUpperCase().slice(0, 14) : atual.formato(soDigitos(bruto));
+    };
+    aplicarValor();
+
+    input.addEventListener('input', () => {
+      if (atual.modo === 'rne') {
+        const limpo = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, atual.max);
+        input.value = limpo;
+        this.write(path, limpo || undefined);
+        return;
+      }
+      const digitos = aplicarMascara(input, { max: atual.max, formato: atual.formato });
+      this.write(path, digitos || undefined);
+    });
+
+    input.addEventListener('focus', () => {
+      const pos = input.value.length;
+      try { input.setSelectionRange(pos, pos); } catch { /* ignora */ }
+    });
+
+    this._documentos.set(pathKey(base), {
+      reconfigurar: () => {
+        const novo = definicao();
+        if (novo.modo === atual.modo) return;
+        atual = novo;
+        input.maxLength = novo.limite;
+        input.placeholder = novo.exemplo;
+        input.inputMode = novo.modo === 'rne' ? '' : 'numeric';
+        aplicarValor();
+        const campo = input.closest('.campo');
+        if (campo) campo.classList.add('tocado');
+      },
+    });
+
+    return input;
   }
 
   /** CPF, CNPJ e códigos numéricos com máscara e cursor estável. */
@@ -241,6 +315,13 @@ export class Form {
   write(path, value) {
     if (value === undefined || value === null || value === '') deleteIn(this.data, path);
     else setIn(this.data, path, value);
+
+    // o número do documento do credor depende do tipo escolhido ao lado
+    if (path[path.length - 1] === 'documento_tipo' && this._documentos) {
+      const dependente = this._documentos.get(pathKey(path.slice(0, -1)));
+      if (dependente) dependente.reconfigurar();
+    }
+
     this.onChange();
   }
 
