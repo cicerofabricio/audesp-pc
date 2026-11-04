@@ -245,9 +245,14 @@ export class Form {
         input.maxLength = novo.limite;
         input.placeholder = novo.exemplo;
         input.inputMode = novo.modo === 'rne' ? '' : 'numeric';
-        aplicarValor();
+        // o número anterior não serve para o novo tipo: limpa e sinaliza
+        input.value = '';
+        deleteIn(this.data, path);
         const campo = input.closest('.campo');
-        if (campo) campo.classList.add('tocado');
+        if (campo) {
+          campo.classList.add('tocado', 'limpou');
+          setTimeout(() => campo.classList.remove('limpou'), 900);
+        }
       },
     });
 

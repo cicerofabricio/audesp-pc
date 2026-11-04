@@ -16,7 +16,7 @@ const ROTULO_TIPO = {
 
 /** Explicações específicas de campos que o schema sozinho não deixa claros. */
 const DICAS = {
-  documento_numero: 'Aceita somente números. O tamanho e a formatação seguem o “Tipo do Documento do Credor”: CPF (11 dígitos, 000.000.000-00), CNPJ (14 dígitos, 00.000.000/0000-00) ou RNE (até 14 caracteres). O arquivo enviado ao Audesp leva apenas os dígitos, sem pontos, barra ou traço.',
+  documento_numero: 'Aceita somente números. O tamanho e a formatação seguem o “Tipo do Documento do Credor”: CPF (11 dígitos, 000.000.000-00), CNPJ (14 dígitos, 00.000.000/0000-00) ou RNE (até 14 caracteres). Ao trocar o tipo, o número é apagado para você digitar no formato novo. O arquivo enviado ao Audesp leva apenas os dígitos, sem pontos, barra ou traço.',
   documento_tipo: 'Define a máscara do número ao lado: 1 = CPF, 2 = CNPJ, 3 = RNE (documento de estrangeiro).',
   descritor: 'Identifica o documento no Audesp. O mês é sempre 12 (prestação anual) e o ano não pode ser anterior a 2024.',
   codigo_ajuste: 'Número do ajuste no Audesp, com 15 a 19 dígitos, sem pontos ou traços (ex.: 2024000000000001).',

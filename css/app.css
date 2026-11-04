@@ -388,6 +388,12 @@ body[data-rota="ajuda"] .topo-nav a[data-nav="ajuda"] { background: rgba(255, 25
 .entrada-mascara { font-variant-numeric: tabular-nums; letter-spacing: .01em; }
 .entrada-moeda { font-variant-numeric: tabular-nums; text-align: right; }
 
+@keyframes piscaLimpeza {
+  from { background: var(--warn-soft); border-color: var(--accent); }
+  to { background: var(--surface); border-color: var(--line); }
+}
+.campo.limpou .entrada { animation: piscaLimpeza .9s ease-out; }
+
 /* histórico */
 .lista-versoes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .versao {
